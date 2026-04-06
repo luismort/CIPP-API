@@ -14,8 +14,14 @@ function Invoke-ListMFAUsers {
     try {
         # If UseReportDB is specified, retrieve from report database
         if ($UseReportDB -eq 'true') {
-            $GraphRequest = Get-CIPPMFAStateReport -TenantFilter $TenantFilter
-            $StatusCode = [HttpStatusCode]::OK
+            try {
+                $GraphRequest = Get-CIPPMFAStateReport -TenantFilter $TenantFilter -ErrorAction Stop
+                $StatusCode = [HttpStatusCode]::OK
+            } catch {
+                Write-Host "Error retrieving MFA state from report database: $($_.Exception.Message)"
+                $StatusCode = [HttpStatusCode]::InternalServerError
+                $GraphRequest = $_.Exception.Message
+            }
 
             return ([HttpResponseContext]@{
                     StatusCode = $StatusCode
@@ -49,16 +55,22 @@ function Invoke-ListMFAUsers {
                         SkipLog          = $true
                     }
                     #Write-Host ($InputObject | ConvertTo-Json)
-                    $InstanceId = Start-NewOrchestration -FunctionName 'CIPPOrchestrator' -InputObject ($InputObject | ConvertTo-Json -Depth 5 -Compress)
-                    Write-Host "Started permissions orchestration with ID = '$InstanceId'"
+                    Start-CIPPOrchestrator -InputObject $InputObject
+
                 }
             } else {
+                Write-Information 'Getting cached MFA state for all tenants'
+                Write-Information "Found $($Rows.Count) rows in cache"
                 $Rows = foreach ($Row in $Rows) {
-                    if ($Row.CAPolicies) {
-                        $Row.CAPolicies = try { $Row.CAPolicies | ConvertFrom-Json } catch { $Row.CAPolicies }
+                    if ($Row.CAPolicies -and $Row.CAPolicies -is [string]) {
+                        $Row.CAPolicies = try { $Row.CAPolicies | ConvertFrom-Json -ErrorAction Stop } catch { @() }
+                    } elseif (-not $Row.CAPolicies) {
+                        $Row | Add-Member -NotePropertyName CAPolicies -NotePropertyValue @() -Force
                     }
-                    if ($Row.MFAMethods) {
-                        $Row.MFAMethods = try { $Row.MFAMethods | ConvertFrom-Json } catch { $Row.MFAMethods }
+                    if ($Row.MFAMethods -and $Row.MFAMethods -is [string]) {
+                        $Row.MFAMethods = try { $Row.MFAMethods | ConvertFrom-Json -ErrorAction Stop } catch { @() }
+                    } elseif (-not $Row.MFAMethods) {
+                        $Row | Add-Member -NotePropertyName MFAMethods -NotePropertyValue @() -Force
                     }
                     $Row
                 }
@@ -73,8 +85,9 @@ function Invoke-ListMFAUsers {
     }
 
     return ([HttpResponseContext]@{
-            StatusCode = [HttpStatusCode]::OK
+            StatusCode = $StatusCode
             Body       = @($GraphRequest)
         })
+
 
 }

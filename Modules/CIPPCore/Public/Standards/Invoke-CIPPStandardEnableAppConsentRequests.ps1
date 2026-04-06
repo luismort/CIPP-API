@@ -119,14 +119,19 @@ function Invoke-CIPPStandardEnableAppConsentRequests {
         }
     }
     if ($Settings.report -eq $true) {
+        # Set default if no roles are selected, matches remediation logic
+        $RolesToAdd = $Settings.ReviewerRoles.value
+        if (!$RolesToAdd -or $RolesToAdd.Count -eq 0) {
+            $RolesToAdd = @('62e90394-69f5-4237-9190-012177145e10')
+        }
 
         $CurrentValue = [PSCustomObject]@{
-            EnableAppConsentRequests = $CurrentInfo.isEnabled
+            EnableAppConsentRequests = [bool]$CurrentInfo.isEnabled
             ReviewerCount            = $CurrentInfo.reviewers.count
         }
         $ExpectedValue = [PSCustomObject]@{
             EnableAppConsentRequests = $true
-            ReviewerCount            = ($Settings.ReviewerRoles.value).count
+            ReviewerCount            = $RolesToAdd.Count
         }
 
         Set-CIPPStandardsCompareField -FieldName 'standards.EnableAppConsentRequests' -CurrentValue $CurrentValue -ExpectedValue $ExpectedValue -TenantFilter $Tenant
